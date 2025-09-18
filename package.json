@@ -7,6 +7,8 @@
     "prepare": "husky install",
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "sw": "workbox generateSW workbox-config.cjs",
+    "build:pwa": "npm run build && npm run sw",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -36,6 +38,7 @@
     "prettier": "^3.0.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.39.1",
-    "vite": "^7.1.2"
+    "vite": "^7.1.2",
+    "workbox-cli": "^7.3.0"
   }
 }
