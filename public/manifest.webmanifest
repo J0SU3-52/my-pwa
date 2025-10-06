@@ -6,7 +6,6 @@
   "display": "standalone",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
-  "description": "App Shell + Service Worker + Manifest para práctica PWA.",
   "icons": [
     {
       "src": "/icons/icon-192.png",
