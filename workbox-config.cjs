@@ -10,12 +10,14 @@ module.exports = {
     navigateFallback: 'index.html',
     // Ejemplo de runtime caching para imágenes:
     runtimeCaching: [
+        // en workbox-config.cjs, dentro de runtimeCaching:
         {
-            urlPattern: ({ request }) => request.destination === 'image',
-            handler: 'StaleWhileRevalidate',
+            urlPattern: ({ url }) => url.origin !== self.location.origin, // o tu dominio de API
+            handler: 'NetworkFirst',
             options: {
-                cacheName: 'images',
-                expiration: { maxEntries: 64, maxAgeSeconds: 7 * 24 * 60 * 60 }
+                cacheName: 'api',
+                networkTimeoutSeconds: 3,
+                expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }
             }
         }
     ]
