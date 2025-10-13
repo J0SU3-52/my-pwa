@@ -1,23 +1,26 @@
-// workbox-config.cjs
 module.exports = {
     globDirectory: 'dist',
-    globPatterns: ['**/*.{html,js,css,svg,png,jpg,jpeg,webp,ico}'],
+    globPatterns: ['**/*.{html,js,css,svg,png,ico,webp}'],
     swDest: 'dist/sw.js',
     clientsClaim: true,
     skipWaiting: true,
-    cleanupOutdatedCaches: true,
-    // Para SPA routing offline:
-    navigateFallback: 'index.html',
-    // Ejemplo de runtime caching para imágenes:
+    navigateFallback: '/index.html',
+    importScripts: ['sw-custom.js'],     // <<--- AQUI
     runtimeCaching: [
-        // en workbox-config.cjs, dentro de runtimeCaching:
+        // imágenes
         {
-            urlPattern: ({ url }) => url.origin !== self.location.origin, // o tu dominio de API
+            urlPattern: ({ request }) => request.destination === 'image',
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'images' }
+        },
+        // API dinámica (network-first)
+        {
+            urlPattern: ({ url }) => url.origin !== self.location.origin,
             handler: 'NetworkFirst',
             options: {
                 cacheName: 'api',
                 networkTimeoutSeconds: 3,
-                expiration: { maxEntries: 100, maxAgeSeconds: 24 * 60 * 60 }
+                expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 }
             }
         }
     ]
