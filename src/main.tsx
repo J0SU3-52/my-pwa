@@ -3,16 +3,15 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './registerSW';
 
+// Pide almacenamiento persistente (mejor fiabilidad en móvil)
 async function ensurePersistence() {
   try {
     if (navigator.storage?.persist && navigator.storage?.persisted) {
       const already = await navigator.storage.persisted();
-      if (!already) {
-        await navigator.storage.persist();
-      }
+      if (!already) await navigator.storage.persist();
     }
-  } catch (err) {
-    console.error('Error asegurando persistencia', err);
+  } catch {
+    // no hacer nada
   }
 }
 ensurePersistence();
