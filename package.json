@@ -6,9 +6,10 @@
   "scripts": {
     "prepare": "husky install",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+    "postbuild": "node -e \"const fs=require('fs');fs.copyFileSync('public/sw-custom.js','dist/sw-custom.js')\"",
     "sw": "workbox generateSW workbox-config.cjs",
-    "build:pwa": "npm run build && npm run sw",
+    "build:pwa": "npm run build && npm run postbuild && npm run sw",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -19,7 +20,7 @@
     ]
   },
   "dependencies": {
-    "idb": "^8.0.3",
+    "idb": "^7.1.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },

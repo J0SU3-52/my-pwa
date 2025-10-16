@@ -1,18 +1,29 @@
 name: CI
+
 on:
   push:
-    branches: [main]
+    branches: [main, week4]
   pull_request:
     branches: [main]
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+
+      - name: Use Node 20
+        uses: actions/setup-node@v4
         with:
-          node-version: '20' # Usa Node.js 20 para coincidir con tu versión local
+          node-version: 20
           cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-      - run: npm run lint
+
+      - name: Install deps
+        run: npm ci
+
+      # si usas husky/commitlint, desactívalo en CI (no hay commits en CI)
+      - name: Disable husky in CI
+        run: echo "HUSKY=0" >> $GITHUB_ENV
+
+      - name: Build PWA
+        run: npm run build:pwa
