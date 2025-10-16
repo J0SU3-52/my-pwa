@@ -1,10 +1,8 @@
 {
   "buildCommand": "npm run build:pwa",
   "outputDirectory": "dist",
-  "rewrites": [
-    {
-      "source": "/(?!assets/|icons/|manifest\\.webmanifest$|favicon\\.ico$|sw\\.js$|robots\\.txt$|offline\\.html$).*",
-      "destination": "/index.html"
-    }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/.*", "dest": "/index.html" }
   ]
 }
