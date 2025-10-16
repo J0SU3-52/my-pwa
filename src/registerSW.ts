@@ -1,9 +1,10 @@
-if ('serviceWorker' in navigator) {
+// src/registerSW.ts
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
-    const swUrl = `${import.meta.env.BASE_URL}sw.js`;
     navigator.serviceWorker
-      .register(swUrl)
-      .then(() => console.log('SW registrado:', swUrl))
-      .catch((e) => console.error('SW error:', e));
+      .register(`${import.meta.env.BASE_URL}sw.js`)
+      .catch(console.error);
   });
 }
+// src/main.tsx
+import './registerSW';
