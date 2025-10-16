@@ -1,9 +1,45 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { addEntry, listEntries, removeEntry, type Entry } from '../lib/db';
+import {
+  addEntry,
+  listEntries,
+  removeEntry,
+  updateEntry,
+  type Entry,
+} from '../lib/db';
 
 type SWWithSync = ServiceWorkerRegistration & {
   sync?: { register(tag: string): Promise<void> };
 };
+
+// --- Plan B: sincronizar desde la página si no hay SyncManager o el SW no corre
+async function syncNowFromPage() {
+  try {
+    // Traemos sólo pendientes desde la BD de la página
+    const db = await import('../lib/db');
+    const pendings: Entry[] =
+      typeof db.listPending === 'function' ? await db.listPending() : [];
+    if (!pendings.length) return;
+
+    for (const it of pendings) {
+      try {
+        await fetch('https://httpbin.org/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: it.title,
+            note: it.note,
+            createdAt: it.createdAt,
+          }),
+        });
+        await updateEntry(it.id as number, { pending: 0 });
+      } catch {
+        // ignorar item fallido y continuar
+      }
+    }
+  } catch {
+    // noop
+  }
+}
 
 export default function OfflineForm() {
   const [title, setTitle] = useState('');
@@ -25,10 +61,21 @@ export default function OfflineForm() {
   useEffect(() => {
     refresh();
 
-    const onStatus = () => setOnline(navigator.onLine);
+    const onStatus = () => {
+      setOnline(navigator.onLine);
+      // Si volvimos online: pide al SW sincronizar y ejecuta plan B
+      if (navigator.onLine) {
+        navigator.serviceWorker?.ready.then((reg) =>
+          reg.active?.postMessage({ type: 'SYNC_NOW' })
+        );
+        syncNowFromPage().then(() => refresh());
+      }
+    };
+
     window.addEventListener('online', onStatus);
     window.addEventListener('offline', onStatus);
 
+    // Si el SW avisa que terminó, refrescamos
     const onSWMessage = (e: MessageEvent) => {
       if (e.data?.type === 'SYNC_DONE') refresh();
     };
