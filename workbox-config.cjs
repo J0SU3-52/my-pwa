@@ -1,21 +1,21 @@
+// workbox-config.cjs
 module.exports = {
     globDirectory: 'dist',
-    globPatterns: ['**/*.{html,js,css,svg,png,ico,webp}'],
+    globPatterns: [
+        '**/*.{js,css,html,ico,png,svg,webmanifest,json}',
+        'offline.html'
+    ],
+    // Opcional: ignora mapas si quieres
+    // globIgnores: ['**/*.map'],
+
     swDest: 'dist/sw.js',
-    clientsClaim: true,
-    skipWaiting: true,
-    navigateFallback: '/index.html',
-    importScripts: ['sw-custom.js'], // este archivo debe existir en dist/
-    runtimeCaching: [
-        {
-            urlPattern: ({ request }) => request.destination === 'image',
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'images' }
-        },
-        {
-            urlPattern: ({ url }) => url.origin !== self.location.origin,
-            handler: 'NetworkFirst',
-            options: { cacheName: 'api', networkTimeoutSeconds: 3 }
-        }
-    ]
+
+    // MUY IMPORTANTE: inyecta tu script con estrategias, sync, push, etc.
+    importScripts: ['sw-custom.js'],
+
+    // Tamaño máximo de archivos a precachear (sube si tienes imágenes grandes)
+    maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MB
+
+    // Si no usaras tu handler de navegación, puedes activar navigateFallback:
+    // navigateFallback: '/index.html',
 };

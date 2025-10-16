@@ -4,7 +4,9 @@
     { "handle": "filesystem" },
     {
       "src": "/(?!assets/|icons/|manifest\\.webmanifest$|favicon\\.ico$|sw\\.js$|robots\\.txt$|offline\\.html$).*",
-      "dest": "/index.html"
+      "dest": "/index.html",
+      "buildCommand": "npm run build:pwa",
+      "outputDirectory": "dist"
     }
   ]
 }
