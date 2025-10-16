@@ -3,27 +3,14 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="theme-color" content="#0f172a" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-
-
-
-  <title>Vite + React + TS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MiPWA</title>
 </head>
 
-<body>
-  <div id="splash"
-    style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f172a;color:#fff;font-family:system-ui;">
-    <div>MyPWA loading…</div>
-  </div>
+<body style="margin:0;background:#0f172a;color:#fff;font-family:system-ui">
   <div id="root"></div>
-  <script>
-    window.addEventListener('load', () => {
-      const s = document.getElementById('splash');
-      if (s) s.style.display = 'none';
-    });
-  </script>
+  <!-- IMPRESCINDIBLE -->
+  <script type="module" src="/src/main.tsx"></script>
 </body>
-
 
 </html>
