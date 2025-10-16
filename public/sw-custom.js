@@ -1,8 +1,18 @@
-// Utilidades mínimas IndexedDB dentro del SW (sin idb, para mantener el SW liviano)
+/* public/sw-custom.js
+   - Sincroniza entradas pendientes usando IndexedDB del SW
+   - Marca pending:0 cuando el POST tiene éxito
+   - Notifica a la página con {type:'SYNC_DONE'} al terminar
+   - Incluye fallback de navegación a offline.html
+*/
+
 const DB_NAME = 'app-db';
 const STORE = 'entries';
+const SYNC_TAG = 'sync-entries';
+// Cambia por tu backend real si tienes uno:
+const API_ENDPOINT = 'https://httpbin.org/post';
 
-function openDB() {
+// ---------- IndexedDB helpers (dentro del SW) ----------
+function swOpenDB() {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, 1);
         req.onupgradeneeded = () => {
@@ -18,69 +28,72 @@ function openDB() {
     });
 }
 
-async function readPending() {
-    const db = await openDB();
+async function swGetAll() {
+    const db = await swOpenDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE, 'readonly');
-        const idx = tx.store.index('pending');
-        const req = idx.getAll(true);
+        const req = tx.objectStore(STORE).getAll();
         req.onsuccess = () => resolve(req.result || []);
         req.onerror = () => reject(req.error);
     });
 }
 
-async function updateEntry(id, patch) {
-    const db = await openDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    const getReq = tx.store.get(id);
+async function swPut(obj) {
+    const db = await swOpenDB();
     return new Promise((resolve, reject) => {
-        getReq.onsuccess = () => {
-            const old = getReq.result;
-            tx.store.put({ ...old, ...patch });
-            tx.done?.then(resolve).catch(reject);
-        };
-        getReq.onerror = () => reject(getReq.error);
+        const tx = db.transaction(STORE, 'readwrite');
+        const req = tx.objectStore(STORE).put(obj);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
     });
 }
 
-// Endpoint de ejemplo (cámbialo por tu backend real)
-const API_ENDPOINT = 'https://httpbin.org/post';
+// ---------- Sincronización ----------
+async function syncPending() {
+    try {
+        // Traemos TODO y filtramos nósotros para cubrir pending: true/1
+        const all = await swGetAll();
+        const pendings = all.filter((e) => e?.pending === true || e?.pending === 1);
+        if (!pendings.length) return;
 
-// --- Background Sync:
+        for (const it of pendings) {
+            try {
+                const res = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: it.title, note: it.note, createdAt: it.createdAt }),
+                });
+                if (res.ok) {
+                    await swPut({ ...it, pending: 0 });
+                }
+            } catch {
+                // Si un item falla, continuamos con los demás
+            }
+        }
+
+        // Avisar a todas las páginas controladas para que refresquen
+        const cl = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
+        cl.forEach((c) => c.postMessage({ type: 'SYNC_DONE' }));
+    } catch {
+        // noop
+    }
+}
+
+// Background Sync (cuando vuelva la red)
 self.addEventListener('sync', (event) => {
-    if (event.tag === 'sync-entries') {
+    if (event.tag === SYNC_TAG) {
         event.waitUntil(syncPending());
     }
 });
 
-async function syncPending() {
-    const pendings = await readPending();
-    if (!pendings.length) return;
-
-    const okIds = [];
-    for (const it of pendings) {
-        try {
-            const res = await fetch(API_ENDPOINT, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title: it.title, note: it.note, createdAt: it.createdAt })
-            });
-            if (res.ok) {
-                okIds.push(it.id);
-            }
-        } catch (_) { /* sin conexión */ }
-    }
-    await Promise.all(okIds.map(id => updateEntry(id, { pending: false })));
-}
-
-// Mensaje para forzar sync en online
+// Mensaje directo desde la página para forzar sync ahora
 self.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'SYNC_NOW') {
         event.waitUntil(syncPending());
     }
 });
 
-// --- Push notifications (manejo en SW):
+// ---------- Push (opcional) ----------
 self.addEventListener('push', (event) => {
     const data = event.data ? event.data.json() : { title: 'MiPWA', body: 'Mensaje push' };
     event.waitUntil(
@@ -88,7 +101,7 @@ self.addEventListener('push', (event) => {
             body: data.body,
             icon: '/icons/icon-192.png',
             badge: '/icons/icon-192.png',
-            data: data.url ? { url: data.url } : {}
+            data: data.url ? { url: data.url } : {},
         })
     );
 });
@@ -99,15 +112,17 @@ self.addEventListener('notificationclick', (event) => {
     event.waitUntil(clients.openWindow(url));
 });
 
-// (opcional) Solo si quieres un fallback manual de navegación
+// ---------- Fallback de navegación (offline) ----------
 self.addEventListener('fetch', (event) => {
     if (event.request.mode === 'navigate') {
-        event.respondWith((async () => {
-            try {
-                const r = await fetch(event.request);
-                if (r && r.ok) return r;
-            } catch { }
-            return (await caches.match('/offline.html')) || (await caches.match('/index.html'));
-        })());
+        event.respondWith(
+            (async () => {
+                try {
+                    const r = await fetch(event.request);
+                    if (r && r.ok) return r;
+                } catch { }
+                return (await caches.match('/offline.html')) || (await caches.match('/index.html'));
+            })()
+        );
     }
 });
