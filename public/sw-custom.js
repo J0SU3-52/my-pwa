@@ -99,14 +99,16 @@ self.addEventListener('notificationclick', (event) => {
     event.waitUntil(clients.openWindow(url));
 });
 
+// (opcional) Solo si quieres un fallback manual de navegación
 self.addEventListener('fetch', (event) => {
     if (event.request.mode === 'navigate') {
         event.respondWith((async () => {
             try {
-                return await fetch(event.request);
-            } catch {
-                return caches.match('/offline.html');
-            }
+                const r = await fetch(event.request);
+                if (r && r.ok) return r;
+            } catch { }
+            return (await caches.match('/offline.html')) || (await caches.match('/index.html'));
         })());
     }
 });
+
