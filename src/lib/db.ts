@@ -22,8 +22,9 @@ function lsRead(): Entry[] {
 function lsWrite(all: Entry[]) {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(all));
-  } catch {
-    // no hacer nada
+  } catch (e) {
+    // Evita no-empty: si storage está lleno/bloqueado, no rompemos el flujo
+    console.warn('[IDB] localStorage write failed', e);
   }
 }
 
@@ -46,8 +47,7 @@ export async function addEntry(entry: Entry) {
   try {
     const db = await getDB();
     await db.add(STORE, entry);
-  } catch (e) {
-    console.warn('[IDB] addEntry falló, usando localStorage', e);
+  } catch {
     const all = lsRead();
     const id = Date.now();
     all.push({ ...entry, id });
@@ -59,8 +59,7 @@ export async function listEntries(): Promise<Entry[]> {
   try {
     const db = await getDB();
     return (await db.getAll(STORE)) as Entry[];
-  } catch (e) {
-    console.warn('[IDB] listEntries falló, leyendo de localStorage', e);
+  } catch {
     return lsRead();
   }
 }
@@ -87,14 +86,12 @@ export async function updateEntry(id: number, patch: Partial<Entry>) {
   }
 }
 
-export async function removeEntries(ids: number[]) {
+export async function removeEntry(id: number) {
   try {
     const db = await getDB();
-    const tx = db.transaction(STORE, 'readwrite');
-    await Promise.all(ids.map((id) => tx.store.delete(id)));
-    await tx.done;
+    await db.delete(STORE, id);
   } catch {
-    const remain = lsRead().filter((e) => !ids.includes(e.id as number));
+    const remain = lsRead().filter((e) => e.id !== id);
     lsWrite(remain);
   }
 }

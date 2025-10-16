@@ -1,6 +1,9 @@
-// src/components/OfflineForm.tsx
-import React, { useEffect, useState } from 'react';
-import { addEntry, listEntries, type Entry } from '../lib/db';
+import React, { useEffect, useMemo, useState } from 'react';
+import { addEntry, listEntries, removeEntry, type Entry } from '../lib/db';
+
+type SWWithSync = ServiceWorkerRegistration & {
+  sync?: { register(tag: string): Promise<void> };
+};
 
 export default function OfflineForm() {
   const [title, setTitle] = useState('');
@@ -9,20 +12,25 @@ export default function OfflineForm() {
   const [online, setOnline] = useState<boolean>(navigator.onLine);
   const [saving, setSaving] = useState(false);
 
-  // Carga inicial + listeners de estado y mensajes del SW
+  const pendientes = useMemo(
+    () => items.filter((e) => e.pending === 1 || e.pending === true).length,
+    [items]
+  );
+
+  const refresh = async () =>
+    setItems(
+      (await listEntries()).slice().sort((a, b) => b.createdAt - a.createdAt)
+    );
+
   useEffect(() => {
-    const refresh = async () => setItems(await listEntries());
     refresh();
 
     const onStatus = () => setOnline(navigator.onLine);
     window.addEventListener('online', onStatus);
     window.addEventListener('offline', onStatus);
 
-    // Si el SW avisa que terminó de sincronizar, refrescamos lista
     const onSWMessage = (e: MessageEvent) => {
-      if (e.data?.type === 'SYNC_DONE') {
-        refresh();
-      }
+      if (e.data?.type === 'SYNC_DONE') refresh();
     };
     navigator.serviceWorker?.addEventListener?.('message', onSWMessage);
 
@@ -41,7 +49,6 @@ export default function OfflineForm() {
     const createdAt = Date.now();
 
     try {
-      // Guarda local: pending 1 si offline, 0 si online
       await addEntry({
         title: title.trim(),
         note: note.trim(),
@@ -49,84 +56,156 @@ export default function OfflineForm() {
         pending: navigator.onLine ? 0 : 1,
       });
 
-      // Si offline: registra Background Sync (si existe)
       if (
         !navigator.onLine &&
         'serviceWorker' in navigator &&
         'SyncManager' in window
       ) {
-        const reg = await navigator.serviceWorker.ready;
-        const anyReg = reg as unknown as {
-          sync?: { register: (tag: string) => Promise<void> };
-        };
-        await anyReg.sync?.register('sync-entries');
-        // console.log('[App] Background Sync registrado');
+        const reg = (await navigator.serviceWorker.ready) as SWWithSync;
+        try {
+          await reg.sync?.register('sync-entries');
+        } catch (err) {
+          console.warn('[App] No se pudo registrar sync', err);
+        }
       } else if (navigator.onLine && 'serviceWorker' in navigator) {
-        // Si estamos online, pide al SW que sincronice ahora
         const reg = await navigator.serviceWorker.ready;
         reg.active?.postMessage({ type: 'SYNC_NOW' });
       }
     } catch {
-      // Si IndexedDB falla (p.ej. restricciones del navegador), lo verás aquí
       alert(
         'No se pudo guardar localmente. Revisa permisos de almacenamiento.'
       );
-      // console.error('Error guardando entrada', err);
     } finally {
       setTitle('');
       setNote('');
       setSaving(false);
-      setItems(await listEntries());
+      refresh();
     }
   };
 
+  const onDelete = async (id?: number) => {
+    if (id == null) return;
+    await removeEntry(id);
+    refresh();
+  };
+
   return (
-    <div style={{ maxWidth: 520, margin: '2rem auto' }}>
-      <h2>Reporte offline (IndexedDB)</h2>
-
-      <p style={{ color: online ? 'lightgreen' : 'salmon', marginTop: -8 }}>
-        Estado: {online ? 'Online' : 'Offline'}
-      </p>
-
+    <div style={{ maxWidth: 680, margin: '1.5rem auto', padding: '0 1rem' }}>
       {!online && (
-        <p style={{ fontSize: 12, opacity: 0.8, marginTop: -8 }}>
-          Sin conexión: tus envíos se guardarán y se sincronizarán al volver a
-          estar en línea.
-        </p>
+        <div
+          style={{
+            background: '#d97706',
+            color: '#111',
+            padding: '10px 12px',
+            borderRadius: 12,
+            marginBottom: 16,
+            fontWeight: 600,
+          }}
+        >
+          Estás sin conexión. Tus datos se guardarán localmente y se mostrarán
+          al recargar.
+        </div>
       )}
 
-      <form onSubmit={submit} style={{ display: 'grid', gap: 8 }}>
+      <h2 style={{ fontSize: 32, margin: 0 }}>Reporte / Tareas (Offline)</h2>
+
+      <p style={{ marginTop: 6, opacity: 0.9 }}>
+        Estado:{' '}
+        <b style={{ color: online ? 'lightgreen' : '#fca5a5' }}>
+          {online ? 'Online' : 'Offline'}
+        </b>
+        {' · '}
+        <span>
+          {pendientes} pendiente{pendientes === 1 ? '' : 's'}
+        </span>
+      </p>
+
+      <form
+        onSubmit={submit}
+        style={{ display: 'grid', gap: 10, marginTop: 10 }}
+      >
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Título"
+          placeholder="Ej. Estudiar PWA / Hacer ejercicio"
           required
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            border: '1px solid #333',
+            background: '#0b1220',
+            color: '#fff',
+          }}
         />
         <textarea
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Nota (opcional)"
+          placeholder="Detalles opcionales…"
+          rows={4}
+          style={{
+            padding: 12,
+            borderRadius: 12,
+            border: '1px solid #333',
+            background: '#0b1220',
+            color: '#fff',
+          }}
         />
-        <button type="submit" disabled={saving}>
-          {saving ? 'Guardando…' : 'Guardar'}
+        <button
+          type="submit"
+          disabled={saving}
+          style={{
+            padding: '14px 16px',
+            borderRadius: 999,
+            border: 0,
+            background: '#7c3aed',
+            color: '#fff',
+            fontWeight: 700,
+          }}
+        >
+          {saving ? 'Guardando…' : online ? 'Guardar' : 'Guardar (offline OK)'}
         </button>
       </form>
 
-      <hr />
-      <h3>Registros</h3>
-      <ul>
-        {items
-          .slice()
-          .sort((a, b) => b.createdAt - a.createdAt)
-          .map((it) => (
-            <li key={it.id}>
-              <b>{it.title}</b> — {new Date(it.createdAt).toLocaleString()}{' '}
-              {(it.pending === 1 || it.pending === true) && (
-                <em>(pendiente)</em>
-              )}
-              {it.note ? <> — {it.note}</> : null}
-            </li>
-          ))}
+      <h3 style={{ marginTop: 24, fontSize: 24 }}>Entradas guardadas</h3>
+
+      <ul style={{ listStyle: 'none', padding: 0, display: 'grid', gap: 12 }}>
+        {items.map((it) => (
+          <li
+            key={it.id}
+            style={{
+              border: '1px solid #2a2a2a',
+              borderRadius: 16,
+              padding: 16,
+              display: 'grid',
+              gridTemplateColumns: '1fr auto',
+              gap: 12,
+            }}
+          >
+            <div>
+              <b style={{ fontSize: 18 }}>{it.title}</b>
+              <br />
+              <small style={{ opacity: 0.85 }}>
+                {new Date(it.createdAt).toLocaleString()} ·{' '}
+                {it.pending === 1 || it.pending === true
+                  ? '⏳ pendiente de sincronizar'
+                  : '✓ sincronizado'}
+              </small>
+              {it.note && <p style={{ marginTop: 8 }}>{it.note}</p>}
+            </div>
+            <button
+              onClick={() => onDelete(it.id)}
+              style={{
+                border: '1px solid #444',
+                borderRadius: 14,
+                background: 'transparent',
+                color: '#fff',
+                padding: '8px 14px',
+              }}
+            >
+              Eliminar
+            </button>
+          </li>
+        ))}
       </ul>
     </div>
   );
