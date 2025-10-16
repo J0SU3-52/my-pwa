@@ -1,17 +1,36 @@
 /* public/sw-custom.js
-   - Sincroniza entradas pendientes usando IndexedDB del SW
-   - Marca pending:0 cuando el POST tiene éxito
-   - Notifica a la página con {type:'SYNC_DONE'} al terminar
-   - Incluye fallback de navegación a offline.html
+   - IndexedDB + Background Sync (pendientes -> POST -> pending=0)
+   - Estrategias de caché en runtime:
+       • Páginas/HTML: Network-First + fallback /offline.html
+       • API (/api/*): Network-First con cache dinámico
+       • Imágenes: Stale-While-Revalidate
+     (Los assets del App Shell los precachea Workbox.)
+   - Mensajería: {type:'SYNC_DONE'} a la página cuando termina
+   - Push opcional
 */
 
+/* ========= CACHES & RUNTIME CONFIG ========= */
+const DYNAMIC_CACHE = 'dynamic-v1';
+const IMAGE_CACHE = 'images-v1';
+
+// Si tienes backend propio, cambia esta URL:
+const API_ENDPOINT = 'https://httpbin.org/post'; // p.ej. '/api/entries'
+
+// Helper para detectar API de tu dominio
+function isApiRequest(url) {
+    try {
+        const u = new URL(url);
+        return u.pathname.startsWith('/api/');
+    } catch {
+        return false;
+    }
+}
+
+/* ========= INDEXEDDB (en el SW) ========= */
 const DB_NAME = 'app-db';
 const STORE = 'entries';
 const SYNC_TAG = 'sync-entries';
-// Cambia por tu backend real si tienes uno:
-const API_ENDPOINT = 'https://httpbin.org/post';
 
-// ---------- IndexedDB helpers (dentro del SW) ----------
 function swOpenDB() {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, 1);
@@ -48,10 +67,9 @@ async function swPut(obj) {
     });
 }
 
-// ---------- Sincronización ----------
+/* ========= SYNC ========= */
 async function syncPending() {
     try {
-        // Traemos TODO y filtramos nósotros para cubrir pending: true/1
         const all = await swGetAll();
         const pendings = all.filter((e) => e?.pending === true || e?.pending === 1);
         if (!pendings.length) return;
@@ -67,11 +85,11 @@ async function syncPending() {
                     await swPut({ ...it, pending: 0 });
                 }
             } catch {
-                // Si un item falla, continuamos con los demás
+                // sigue con los demás
             }
         }
 
-        // Avisar a todas las páginas controladas para que refresquen
+        // avisa a todas las páginas controladas
         const cl = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
         cl.forEach((c) => c.postMessage({ type: 'SYNC_DONE' }));
     } catch {
@@ -79,21 +97,95 @@ async function syncPending() {
     }
 }
 
-// Background Sync (cuando vuelva la red)
 self.addEventListener('sync', (event) => {
     if (event.tag === SYNC_TAG) {
         event.waitUntil(syncPending());
     }
 });
 
-// Mensaje directo desde la página para forzar sync ahora
 self.addEventListener('message', (event) => {
+    // Mantén el protocolo que ya usas en tu app:
     if (event.data && event.data.type === 'SYNC_NOW') {
         event.waitUntil(syncPending());
     }
 });
 
-// ---------- Push (opcional) ----------
+/* ========= RUNTIME CACHING (estrategias) ========= */
+// Network-First para páginas (HTML) con fallback a /offline.html
+async function networkFirstForPages(request) {
+    try {
+        const response = await fetch(request);
+        if (response && response.ok) return response;
+        throw new Error('bad network response');
+    } catch {
+        // Workbox debe haber precacheado /offline.html; si no, intenta match genérico
+        return (await caches.match('/offline.html')) ||
+            (await caches.match('/index.html')) ||
+            new Response('Sin conexión y sin contenido cacheado.', { headers: { 'Content-Type': 'text/plain' } });
+    }
+}
+
+// Network-First con cache dinámico (para API)
+async function networkFirst(request, cacheName) {
+    try {
+        const res = await fetch(request);
+        if (res && res.status === 200) {
+            const cache = await caches.open(cacheName);
+            cache.put(request, res.clone());
+        }
+        return res;
+    } catch {
+        const cache = await caches.open(cacheName);
+        const cached = await cache.match(request);
+        if (cached) return cached;
+        throw new Error('Network and cache both failed');
+    }
+}
+
+// SWR para imágenes
+async function staleWhileRevalidate(request, cacheName) {
+    const cache = await caches.open(cacheName);
+    const cachedPromise = cache.match(request);
+    const networkPromise = fetch(request)
+        .then((res) => {
+            if (res && res.status === 200) cache.put(request, res.clone());
+            return res;
+        })
+        .catch(() => null);
+
+    const cached = await cachedPromise;
+    return cached || (await networkPromise) || fetch(request);
+}
+
+self.addEventListener('fetch', (event) => {
+    const req = event.request;
+    const url = new URL(req.url);
+
+    // Páginas/HTML
+    if (
+        req.mode === 'navigate' ||
+        (req.destination === '' && req.headers.get('accept')?.includes('text/html'))
+    ) {
+        event.respondWith(networkFirstForPages(req));
+        return;
+    }
+
+    // API (tu dominio)
+    if (isApiRequest(req.url)) {
+        event.respondWith(networkFirst(req, DYNAMIC_CACHE));
+        return;
+    }
+
+    // Imágenes
+    if (req.destination === 'image') {
+        event.respondWith(staleWhileRevalidate(req, IMAGE_CACHE));
+        return;
+    }
+
+    // Resto: deja que Workbox gestione (precache/estrategias declaradas)
+});
+
+/* ========= PUSH (opcional) ========= */
 self.addEventListener('push', (event) => {
     const data = event.data ? event.data.json() : { title: 'MiPWA', body: 'Mensaje push' };
     event.waitUntil(
@@ -110,19 +202,4 @@ self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const url = event.notification.data?.url || '/';
     event.waitUntil(clients.openWindow(url));
-});
-
-// ---------- Fallback de navegación (offline) ----------
-self.addEventListener('fetch', (event) => {
-    if (event.request.mode === 'navigate') {
-        event.respondWith(
-            (async () => {
-                try {
-                    const r = await fetch(event.request);
-                    if (r && r.ok) return r;
-                } catch { }
-                return (await caches.match('/offline.html')) || (await caches.match('/index.html'));
-            })()
-        );
-    }
 });
