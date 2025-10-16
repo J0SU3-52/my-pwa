@@ -5,15 +5,18 @@ module.exports = {
     clientsClaim: true,
     skipWaiting: true,
     navigateFallback: '/index.html',
-    importScripts: ['sw-custom.js'],     // <<--- AQUI
+    importScripts: ['sw-custom.js'],
     runtimeCaching: [
-        // imágenes
+        // 2) Imágenes -> Stale-While-Revalidate
         {
             urlPattern: ({ request }) => request.destination === 'image',
             handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'images' }
+            options: {
+                cacheName: 'images',
+                expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 30 }
+            }
         },
-        // API dinámica (network-first)
+        // 3) Datos de API -> Network-First
         {
             urlPattern: ({ url }) => url.origin !== self.location.origin,
             handler: 'NetworkFirst',
