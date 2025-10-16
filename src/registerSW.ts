@@ -1,4 +1,3 @@
-// src/registerSW.ts
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
@@ -6,5 +5,3 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
       .catch(console.error);
   });
 }
-// src/main.tsx
-import './registerSW';

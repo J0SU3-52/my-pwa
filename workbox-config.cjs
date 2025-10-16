@@ -5,26 +5,17 @@ module.exports = {
     clientsClaim: true,
     skipWaiting: true,
     navigateFallback: '/index.html',
-    importScripts: ['sw-custom.js'],
+    importScripts: ['sw-custom.js'], // este archivo debe existir en dist/
     runtimeCaching: [
-        // 2) Imágenes -> Stale-While-Revalidate
         {
             urlPattern: ({ request }) => request.destination === 'image',
             handler: 'StaleWhileRevalidate',
-            options: {
-                cacheName: 'images',
-                expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 30 }
-            }
+            options: { cacheName: 'images' }
         },
-        // 3) Datos de API -> Network-First
         {
             urlPattern: ({ url }) => url.origin !== self.location.origin,
             handler: 'NetworkFirst',
-            options: {
-                cacheName: 'api',
-                networkTimeoutSeconds: 3,
-                expiration: { maxEntries: 100, maxAgeSeconds: 60 * 60 * 24 }
-            }
+            options: { cacheName: 'api', networkTimeoutSeconds: 3 }
         }
     ]
 };

@@ -3,7 +3,7 @@
   "routes": [
     { "handle": "filesystem" },
     {
-      "src": "/(?!assets/.*|icons/.*|manifest\\.webmanifest|favicon\\.ico|offline\\.html).*",
+      "src": "/(?!assets/|icons/|manifest\\.webmanifest$|favicon\\.ico$|sw\\.js$|robots\\.txt$|offline\\.html$).*",
       "dest": "/index.html"
     }
   ]
